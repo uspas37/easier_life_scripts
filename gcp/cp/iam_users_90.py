@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Check GCP IAM users in colpal-shared-resources-prd project
+Check GCP IAM users in the GCP project selected on row 12.
 and identify users with no activity in the last 90 days.
 """
 import subprocess
@@ -9,7 +9,7 @@ import csv
 from datetime import datetime, timedelta
 from collections import defaultdict
 
-PROJECT_ID = "colpal-shared-resources-prd"
+PROJECT_ID = "PROJECT ID"
 DAYS = 90
 
 
