@@ -185,6 +185,7 @@ declare -A region_vpc_counts
 declare -A region_vpc_used_counts
 declare -A region_subnet_counts
 declare -A region_subnet_used_counts
+declare -A region_has_default_vpc
 
 echo "Analyzing VPCs and Subnets across all regions..."
 echo ""
@@ -195,6 +196,13 @@ for REGION in $REGIONS; do
     echo "Processing Region: $REGION"
     echo "=========================================="
     
+    # Initialize region counters
+    region_vpc_count=0
+    region_unused_vpc_count=0
+    region_subnet_count=0
+    region_unused_subnet_count=0
+    region_has_default="No"
+    
     # Get all VPCs in this region
     vpc_list=$(aws ec2 describe-vpcs --region "$REGION" --query 'Vpcs[*].[VpcId,IsDefault]' --output text 2>/dev/null)
     
@@ -202,13 +210,21 @@ for REGION in $REGIONS; do
     if [ -z "$vpc_list" ]; then
         echo "No VPCs found or region not accessible. Skipping..."
         echo ""
+        # Store zero counts for this region
+        region_vpc_counts[$REGION]=0
+        region_vpc_used_counts[$REGION]=0
+        region_subnet_counts[$REGION]=0
+        region_subnet_used_counts[$REGION]=0
+        region_has_default_vpc[$REGION]="No"
         continue
     fi
     
-    region_vpc_count=0
-    region_unused_vpc_count=0
-    
     while IFS=$'\t' read -r vpc_id is_default; do
+        # Check if this is a default VPC
+        if [ "$is_default" = "True" ]; then
+            region_has_default="Yes"
+        fi
+        
         # Get VPC name from tags
         vpc_name=$(aws ec2 describe-vpcs \
             --vpc-ids "$vpc_id" \
@@ -244,12 +260,10 @@ for REGION in $REGIONS; do
     # Store regional VPC stats
     region_vpc_counts[$REGION]=$region_vpc_count
     region_vpc_used_counts[$REGION]=$((region_vpc_count - region_unused_vpc_count))
+    region_has_default_vpc[$REGION]=$region_has_default
     
     # Get all subnets in this region
     subnet_list=$(aws ec2 describe-subnets --region "$REGION" --query 'Subnets[*].[SubnetId,VpcId,CidrBlock,AvailabilityZone]' --output text 2>/dev/null)
-    
-    region_subnet_count=0
-    region_unused_subnet_count=0
     
     if [ -n "$subnet_list" ]; then
         while IFS=$'\t' read -r subnet_id vpc_id cidr az; do
@@ -337,11 +351,11 @@ echo "==========================================================================
 echo ""
 
 # Summary Table by Region
-echo "=========================================================================================================="
+echo "======================================================================================================================"
 echo "REGIONAL SUMMARY TABLE"
-echo "=========================================================================================================="
-printf "%-20s | %-12s | %-12s | %-14s | %-14s\n" "Region" "Total VPCs" "VPCs In Use" "Total Subnets" "Subnets In Use"
-echo "----------------------------------------------------------------------------------------------------------"
+echo "======================================================================================================================"
+printf "%-20s | %-12s | %-12s | %-14s | %-14s | %-12s\n" "Region" "Total VPCs" "VPCs In Use" "Total Subnets" "Subnets In Use" "Default VPC"
+echo "----------------------------------------------------------------------------------------------------------------------"
 
 # Sort regions alphabetically and display stats
 for REGION in $(echo "$REGIONS" | tr ' ' '\n' | sort); do
@@ -349,16 +363,17 @@ for REGION in $(echo "$REGIONS" | tr ' ' '\n' | sort); do
     vpc_used=${region_vpc_used_counts[$REGION]:-0}
     subnet_total=${region_subnet_counts[$REGION]:-0}
     subnet_used=${region_subnet_used_counts[$REGION]:-0}
+    has_default=${region_has_default_vpc[$REGION]:-"No"}
     
     # Only show regions that have VPCs or Subnets
     if [ $vpc_total -gt 0 ] || [ $subnet_total -gt 0 ]; then
-        printf "%-20s | %-12s | %-12s | %-14s | %-14s\n" "$REGION" "$vpc_total" "$vpc_used" "$subnet_total" "$subnet_used"
+        printf "%-20s | %-12s | %-12s | %-14s | %-14s | %-12s\n" "$REGION" "$vpc_total" "$vpc_used" "$subnet_total" "$subnet_used" "$has_default"
     fi
 done
 
-echo "----------------------------------------------------------------------------------------------------------"
-printf "%-20s | %-12s | %-12s | %-14s | %-14s\n" "TOTAL (All Regions)" "$total_vpc_count" "$((total_vpc_count - total_unused_vpc_count))" "$total_subnet_count" "$((total_subnet_count - total_unused_subnet_count))"
-echo "=========================================================================================================="
+echo "----------------------------------------------------------------------------------------------------------------------"
+printf "%-20s | %-12s | %-12s | %-14s | %-14s | %-12s\n" "TOTAL (All Regions)" "$total_vpc_count" "$((total_vpc_count - total_unused_vpc_count))" "$total_subnet_count" "$((total_subnet_count - total_unused_subnet_count))" "N/A"
+echo "======================================================================================================================"
 echo ""
 
 # Global Summary
