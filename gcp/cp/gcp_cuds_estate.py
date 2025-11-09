@@ -10,6 +10,7 @@ import json
 import sys
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 
 def run_command(cmd: List[str]) -> Dict[str, Any]:
@@ -73,14 +74,17 @@ def get_compute_cuds(project_id: str) -> List[Dict[str, Any]]:
         return []
 
 
-def get_project_cuds(project: Dict[str, str]) -> Dict[str, Any]:
+def get_project_cuds(project: Dict[str, str], progress_lock: Lock, counter: Dict[str, int], total: int) -> Dict[str, Any]:
     """Get all CUD details for a specific project."""
     project_id = project.get("projectId", "")
     project_name = project.get("name", "")
     
-    print(f"Checking project: {project_id}")
-    
     compute_cuds = get_compute_cuds(project_id)
+    
+    # Thread-safe progress update
+    with progress_lock:
+        counter['completed'] += 1
+        print(f"[{counter['completed']}/{total}] Checked project: {project_id} - Found {len(compute_cuds)} CUD(s)")
     
     return {
         "projectId": project_id,
@@ -109,27 +113,44 @@ def main():
         sys.exit(1)
     
     print()
-    print("Scanning projects for CUDs...")
+    print("Scanning projects for CUDs in parallel...")
     print("-" * 80)
     
     # Collect CUD information from all projects
+    all_project_results = []
     projects_with_cuds = []
+    failed_projects = []
     
-    # Use ThreadPoolExecutor for parallel processing
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    # Thread-safe progress tracking
+    progress_lock = Lock()
+    counter = {'completed': 0}
+    total_projects = len(filtered_projects)
+    
+    # Use ThreadPoolExecutor for parallel processing with more workers
+    max_workers = min(20, total_projects)  # Cap at 20 or number of projects
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks simultaneously
         future_to_project = {
-            executor.submit(get_project_cuds, project): project 
+            executor.submit(get_project_cuds, project, progress_lock, counter, total_projects): project 
             for project in filtered_projects
         }
         
+        # Collect results as they complete
         for future in as_completed(future_to_project):
+            project = future_to_project[future]
             try:
                 cud_info = future.result()
+                all_project_results.append(cud_info)
                 if cud_info["totalCUDs"] > 0:
                     projects_with_cuds.append(cud_info)
             except Exception as e:
-                project = future_to_project[future]
-                print(f"Error processing project {project.get('projectId')}: {e}", file=sys.stderr)
+                failed_projects.append({
+                    'projectId': project.get('projectId'),
+                    'error': str(e)
+                })
+                with progress_lock:
+                    print(f"Error processing project {project.get('projectId')}: {e}", file=sys.stderr)
     
     # Display results
     print()
@@ -180,9 +201,17 @@ def main():
     print("SUMMARY")
     print("=" * 80)
     print(f"Total projects scanned: {len(filtered_projects)}")
+    print(f"Successfully processed: {len(all_project_results)}")
+    print(f"Failed: {len(failed_projects)}")
     print(f"Projects with CUDs: {len(projects_with_cuds)}")
     total_cuds = sum(p['totalCUDs'] for p in projects_with_cuds)
     print(f"Total CUDs found: {total_cuds}")
+    
+    if failed_projects:
+        print()
+        print("Failed Projects:")
+        for failed in failed_projects:
+            print(f"  - {failed['projectId']}: {failed['error']}")
     print()
 
 
