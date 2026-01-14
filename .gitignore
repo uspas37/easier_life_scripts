@@ -1,0 +1,44 @@
+# Credentials and secrets
+*.json
+.env
+.env.*
+*credentials*
+*secret*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Service account keys
+*-key.json
+*serviceaccount*.json
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Output files
+*.log
+*.csv
+*.xlsx
+output/
+results/
