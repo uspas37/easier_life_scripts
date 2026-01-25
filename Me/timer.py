@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 
+# ==============================================================================
+# Description:
+# This script quickly starts a timer when you need it :)
+#
+# Author: Pablo Sanchez
+# Date: 2025-10-08
+# ==============================================================================
+
 import tkinter as tk
 from tkinter import ttk, messagebox
 
